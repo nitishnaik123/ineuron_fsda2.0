@@ -1,0 +1,228 @@
+1. Evaluate the median severity value of accidents caused by various Motorcycles.
+
+CREATE SCHEMA accidents;
+
+USE accidents;
+
+/* -------------------------------- */
+/* Create Tables */
+CREATE TABLE accident(
+	accident_index VARCHAR(13),
+    accident_severity INT
+);
+
+CREATE TABLE vehicles(
+	accident_index VARCHAR(13),
+    vehicle_type VARCHAR(50)
+);
+
+/* First: for vehicle types, create new csv by extracting data from Vehicle Type sheet from Road-Accident-Safety-Data-Guide.xls */
+CREATE TABLE vehicle_types(
+	vehicle_code INT,
+    vehicle_type VARCHAR(10)
+);
+
+/* -------------------------------- */
+/* Load Data */
+LOAD DATA LOCAL INFILE 'C:\\Users\\Accidents_2015.csv'
+INTO TABLE accident
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@col1, @dummy, @dummy, @dummy, @dummy, @dummy, @col2, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy)
+SET accident_index=@col1, accident_severity=@col2;
+
+
+LOAD DATA LOCAL INFILE 'C:\\Users\\Vehicles_2015.csv'
+INTO TABLE vehicles
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@col1, @dummy, @col2, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy, @dummy)
+SET accident_index=@col1, vehicle_type=@col2;
+
+
+LOAD DATA LOCAL INFILE 'C:\\Users\\vehicle_types.csv'
+INTO TABLE vehicle_types
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES;
+
+2. Evaluate Accident Severity and Total Accidents per Vehicle Type
+CREATE TABLE accidents_median(
+vehicle_types VARCHAR(100),
+severity INT
+);
+
+3. Calculate the Average Severity by vehicle type.
+# UK Road Safty 2015 data
+import pymysql
+
+myConnection = pymysql.connect(
+    host="localhost", user="root", password="root", db="accidents")
+
+cur = myConnection.cursor()
+
+cur.execute(
+    "SELECT vehicle_type FROM vehicle_types WHERE vehicle_type LIKE '%torcycle%';")
+
+cycle_list = cur.fetchall()
+
+
+selectSQL = ('''
+SELECT vt.vehicle_type, a.accident_severity
+FROM accident a
+JOIN vehicles v ON a.accident_index = v.accident_index
+JOIN vehicle_types vt ON v.vehicle_type = vt.vehicle_code
+WHERE vt.vehicle_type LIKE %s
+ORDER BY a.accident_severity;
+''')
+
+
+insert_SQL = ('''INSERT INTO accidents_median
+VALUES(%s, %s);''')
+
+
+for cycle in cycle_list:
+    cur.execute(selectSQL, cycle[0])
+    accidents = cur.fetchall()
+
+    # calculate median severity
+    # divide the length of accidents /2 to find the median of accdients list
+    quotient, remainder = divmod(len(accidents), 2)
+
+    if remainder:
+        # meaning odds number of items in accidents list
+        median_severity = accidents[quotient][1]
+    else:
+        # even numbers of items in accidents list
+        median_severity = (accidents[quotient]
+                           [1] + accidents[quotient + 2][1]) / 2
+
+    print("finding Median Severity for ", cycle[0])
+
+    # insert the calculated median severity into table
+    cur.execute(insert_SQL, (cycle[0], median_severity))
+
+myConnection.commit()
+myConnection.close()
+
+4. Calculate the Average Severity and Total Accidents by Motorcycle.
+/* SIDE NOTE: Compare performance of the query rows by using Explain Icon first (Before Indexing and After Indexing)*/
+
+/* Create index on accident_index as it is using in both vehicles and accident tables and join clauses using indexes will perform faster */
+CREATE INDEX accident_index
+ON accident(accident_index);
+
+CREATE INDEX accident_index
+ON vehicles(accident_index);
+
+
+/* get Accident Severity and Total Accidents per Vehicle Type */
+SELECT vt.vehicle_type AS 'Vehicle Type', a.accident_severity AS 'Severity', COUNT(vt.vehicle_type) AS 'Number of Accidents'
+FROM accident a
+JOIN vehicles v ON a.accident_index = v.accident_index
+JOIN vehicle_types vt ON v.vehicle_type = vt.vehicle_code
+GROUP BY 1
+ORDER BY 2,3;
+
+/* Average Severity by vehicle type */
+SELECT vt.vehicle_type AS 'Vehicle Type', AVG(a.accident_severity) AS 'Average Severity', COUNT(vt.vehicle_type) AS 'Number of Accidents'
+FROM accident a
+JOIN vehicles v ON a.accident_index = v.accident_index
+JOIN vehicle_types vt ON v.vehicle_type = vt.vehicle_code
+GROUP BY 1
+ORDER BY 2,3;
+
+
+/* Average Severity and Total Accidents by Motorcyle */
+SELECT vt.vehicle_type AS 'Vehicle Type', AVG(a.accident_severity) AS 'Average Severity', COUNT(vt.vehicle_type) AS 'Number of Accidents'
+FROM accident a
+JOIN vehicles v ON a.accident_index = v.accident_index
+JOIN vehicle_types vt ON v.vehicle_type = vt.vehicle_code
+WHERE vt.vehicle_type LIKE '%otorcycle%'
+GROUP BY 1
+ORDER BY 2,3;
+
+
+
+
+
+population-------
+CREATE SCHEMA ca_population;
+
+USE ca_population;
+
+CREATE TABLE pop_proj(
+	county_code VARCHAR(45) NOT NULL,
+    county_name VARCHAR(45) NOT NULL,
+    date_year INT NOT NULL,
+    race_code INT NOT NULL,
+    race TEXT NOT NULL,
+    gender VARCHAR(6) NOT NULL,
+    age INT NOT NULL,
+    population INT NOT NULL
+);
+
+/* Load Data */
+/* ignore first header line, delimiter setting, etc*/
+LOAD DATA LOCAL INFILE 'C:\\Users\\User\\CA_DRU_proj_2010-2060.csv'
+INTO TABLE pop_proj
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES;
+
+/* check the loaded data */
+SELECT * FROM pop_proj
+LIMIT 10;
+
+/* SIDE NOTE */
+/*
+If there is any issues with loading local data is disabled, we need to enable it.
+
+Ref: https://stackoverflow.com/questions/59993844/error-loading-local-data-is-disabled-this-must-be-enabled-on-both-the-client
+
+Ref: if you can't access mysql from cmd, add mysql path in path first https://www.qualitestgroup.com/resources/knowledge-center/how-to-guide/add-mysql-path-windows/
+
+1) log into to mysql from command line >> mysql -u <username> -p
+2) check local_infile varialbe current status >> show global variables like 'local_infile';
+3) if that is OFF,enable it >> SET GLOBAL local_infile=1;
+4) quit the server >> quit
+5) connect to server again >> mysql --local_infile=1 -u root -p
+6) run the load sql statement.
+*/
+/* To increase performance, index on county name */
+CREATE INDEX county_name
+ON pop_proj(county_name);
+
+/* Inital list of male and female populations per county for 2014 */
+SELECT county_name, gender, SUM(population) As total_population
+FROM pop_proj
+WHERE date_year = 2014
+GROUP BY county_name, gender
+ORDER BY county_name;
+
+/* return information in specially formatted table */
+/* list of male and female populations per county for 2014 */
+SELECT p.county_name, 
+	SUM(p.population) AS Male, 
+    female_pop.Female FROM 
+		(SELECT county_name, SUM(population) AS Female
+		FROM pop_proj
+		WHERE date_year = 2014 and gender = 'Female'
+		GROUP BY county_name
+		ORDER BY county_name) AS female_pop
+JOIN pop_proj p
+ON p.county_name = female_pop.county_name
+WHERE p.date_year = 2014 AND p.gender = 'Male'
+GROUP BY p.county_name
+ORDER BY p.county_name;
+
+https://data.ca.gov/dataset
+
+
+https://data.ca.gov/dataset/ca-educational-attainment-personal-income
